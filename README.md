@@ -23,7 +23,7 @@ You will be prompted to enter your sudo password when needed.
 - Command `Anon` in a user-level terminal
 
 ## How to uninstall AnonRecon
-- Execute `Grecon`
+- Execute `anon`
 - Select `uni`
 
 ### Disclaimer
