@@ -2,7 +2,7 @@
 
 
 
-## 🔎 GhostRecon OSINT
+## 🔎 ANONRECON OSINT
 A compact research and OSINT tool for linux.
 
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
