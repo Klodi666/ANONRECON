@@ -1,0 +1,852 @@
+#!/bin/bash
+# Version: 2.0.5
+
+#IMPORTS
+#NONE YET
+#COMMAND
+clear
+
+#COLORS
+#RED = \e[1;31m
+#BLUE = \e[34m
+#END = \e[0m
+
+last_notable_changes="
+Added exif data extract
+Big code cleanup
+Updated install script
+added read, delete, export and write report options
+"
+
+#COLORS2
+red='\e[1;31m'
+yellow='\e[0;33m'
+Blue='\e[1;34m'
+
+PATH_TO_TOOLS="/usr/share/GhostRecon"
+PATH_TO_REPORTS="$HOME/.local/share/GhostRecon"
+
+function get_version() {
+  local file_path="$1"
+  local version_line
+  version_line=$(sed -n '2p' "$file_path")
+  local version_number
+  version_number=$(echo "$version_line" | cut -d ' ' -f 3)
+  echo "$version_number"
+}
+
+# Declare global variables
+appendfile=false
+savefile=false
+tempfile="/tmp/tempfile" # Adjust this path as needed
+filename="/dev/null"
+
+function save_output() {
+  local target_file
+  local -i counter
+
+  while true; do
+    read -p "Save output to a file? (y/N): " -r response
+    case "$response" in
+    [yY])
+      savefile=true
+      break
+      ;;
+    [nN])
+      return
+      ;;
+    *)
+      echo "Invalid input. Please enter y or n."
+      ;;
+    esac
+  done
+
+  if [[ "$savefile" == true ]]; then
+    mapfile -t report_files < <(find "$PATH_TO_REPORTS" -type f -name 'GR-report*')
+    if ((${#report_files[@]} > 0)); then
+      echo -e "\n\n[\e[32m-\e[0m] Found existing reports in $PATH_TO_REPORTS: \n"
+      for i in "${!report_files[@]}"; do
+        echo -e "[\e[32m$((i + 1))\e[0m] ${report_files[i]}"
+      done
+
+      while true; do
+        read -p "Append the results to one of them? (y/N): " -r response
+        case "$response" in
+        [yY])
+          appendfile=true
+          echo -e "Enter the \e[32mnumber\e[0m of the file to append: "
+          read -r target_number
+          if [[ "$target_number" =~ ^[1-9][0-9]*$ ]] && ((target_number <= ${#report_files[@]})); then
+            target_file="${report_files[target_number - 1]}"
+            echo "$target_file" >"$tempfile"
+            break
+          else
+            echo "Invalid input. Please enter a valid number."
+          fi
+          ;;
+        [nN])
+          break
+          ;;
+        *)
+          echo "Invalid input. Please enter y or n."
+          ;;
+        esac
+      done
+    else
+      read -p "Enter a file name: GR-report_" target_filename
+      target_file="$PATH_TO_REPORTS/GR-report_${target_filename}.txt"
+    fi
+    filename=$target_file
+  else
+    filename="/dev/null"
+  fi
+}
+
+function collapse_files() {
+  local append_filename
+  local temp_filename="$tempfile"
+
+  if [[ "$appendfile" == true ]]; then
+    if [[ -f "$temp_filename" ]]; then
+      append_filename="$(<"$temp_filename")"
+      if [[ -f "$append_filename" ]]; then
+        cat "$filename" >>"$append_filename"
+        echo -e "[\e[32m*\e[0m] $append_filename updated\n"
+      else
+        echo "Error: Append file does not exist: $append_filename"
+      fi
+    else
+      echo "Error: Temporary file does not exist: $temp_filename"
+    fi
+  elif [[ "$savefile" == false ]]; then
+    if [[ -f "$filename" ]]; then
+      rm "$filename"
+      echo "File $filename deleted."
+    fi
+  else
+    echo -e "\n[\e[32m*\e[0m] $filename created in $PATH_TO_REPORTS\n"
+  fi
+
+  # Clean up the temporary file
+  if [[ -f "$temp_filename" ]]; then
+    rm "$temp_filename"
+  fi
+}
+
+function booleancolor() {
+  if [[ $1 == false ]]; then
+    #green
+    echo -e "\e[0;32m No\e[0m"
+  elif [[ $1 == true ]]; then
+    #red
+    echo -e "\e[1;31m Yes\e[0m"
+  else
+    echo "$1"
+  fi
+}
+
+function read_report() {
+  echo -e "\n\n[\e[32m-\e[0m] Files in $PATH_TO_REPORTS: \n"
+  i=1
+  while IFS= read -r file; do
+    echo -e "[\e[32m$i\e[0m] $file"
+    i=$((i + 1))
+  done < <(find "$PATH_TO_REPORTS" -type f)
+  echo ""
+
+  read -p "Enter the number of the file you want to read: " -r target_number
+  if [[ "$target_number" =~ ^[1-9][0-9]*$ ]]; then
+    target_file=$(find "$PATH_TO_REPORTS" -type f | sed -n "${target_number}p")
+    echo -e "\n\e[1;31m$target_file\e[0m\n"
+    cat "$target_file"
+  else
+    echo "Invalid input. Please enter a valid number."
+  fi
+}
+
+function edit_report() {
+  echo -e "\n\n[\e[32m-\e[0m] Files in $PATH_TO_REPORTS: \n"
+  i=1
+  while IFS= read -r file; do
+    echo -e "[\e[32m$i\e[0m] $file"
+    i=$((i + 1))
+  done < <(find "$PATH_TO_REPORTS" -type f)
+  echo ""
+
+  read -p "Enter the number of the file you want to edit: " -r target_number
+  if [[ "$target_number" =~ ^[1-9][0-9]*$ ]]; then
+    target_file=$(find "$PATH_TO_REPORTS" -type f | sed -n "$target_number p")
+    echo -e "\n\e[1;31m$target_file\e[0m\n"
+    sudo nano "$target_file"
+  else
+    echo "Invalid input. Please enter a valid number."
+  fi
+}
+
+function export_report() {
+  echo -e "\n\n[\e[32m-\e[0m] Files in $PATH_TO_REPORTS: \n"
+  i=1
+  while IFS= read -r file; do
+    echo -e "[\e[32m$i\e[0m] $file"
+    i=$((i + 1))
+  done < <(find "$PATH_TO_REPORTS" -type f)
+  echo ""
+
+  read -p "Enter the number of the file you want to export: " -r target_number
+  if [[ "$target_number" =~ ^[1-9][0-9]*$ ]]; then
+    target_file=$(find "$PATH_TO_REPORTS" -type f | sed -n "${target_number}p")
+    echo -e "\n\e[1;31m$target_file\e[0m\n"
+    read -p "Enter the path where you want to export the file: " export_path
+    if [[ -n $export_path ]]; then
+      sudo cp "$target_file" "$export_path"
+      echo "File exported!"
+    else
+      echo "Invalid input. Please enter a valid path."
+    fi
+  else
+    echo "Invalid input. Please enter a valid number."
+  fi
+}
+
+function delete_report() {
+  echo -e "\n\n[\e[32m-\e[0m] Files in $PATH_TO_REPORTS: \n"
+  i=1
+  while IFS= read -r file; do
+    echo -e "[\e[32m$i\e[0m] $file"
+    i=$((i + 1))
+  done < <(find "$PATH_TO_REPORTS" -type f)
+  echo ""
+
+  read -p "Enter the number of the file you want to delete: " -r target_number
+  if [[ "$target_number" =~ ^[1-9][0-9]*$ ]]; then
+    target_file=$(find "$PATH_TO_REPORTS" -type f | sed -n "$target_number p")
+    echo -e "\n\e[1;31m$target_file\e[0m\n"
+    read -p "Are you sure you want to delete $target_file? (y/N): " -r response
+    case "$response" in
+    [yY])
+      sudo rm "$target_file"
+      echo "File deleted!"
+      ;;
+    *)
+      echo "Operation cancelled."
+      ;;
+    esac
+  else
+    echo "Invalid input. Please enter a valid number."
+  fi
+}
+
+function reversedbooleancolor() {
+  if [[ $1 == true ]]; then
+    #green
+    echo -e "\e[0;32m Yes\e[0m"
+  elif [[ $1 == false ]]; then
+    #red
+    echo -e "\e[1;31m No\e[0m"
+  else
+    echo " $1"
+  fi
+}
+
+function booleanconvertor() {
+  if [[ $1 == true ]]; then
+    echo -e " Yes"
+
+  elif [[ $1 == false ]]; then
+    echo -e " No"
+
+  else
+    echo " $1"
+  fi
+
+}
+
+# Compare two files
+compare_files() {
+  local file1="$1"
+  local file2="$2"
+
+  # Use diff to compare the files
+  if diff -q "$file1" "$file2" >/dev/null; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# QUIT FUNCTION
+function quit() {
+  echo -e "\e[1;31m THANKS FOR USING GHOST RECON! \e[0m"
+
+  exit 2
+}
+
+# CATCH CTRL
+trap "quit" 2
+function oldbanner {
+  clear
+ # ANONRECON banner
+echo -e "
+\e[32m   ██████╗ ███╗   ██╗ ██████╗ ███╗   ██╗██████╗ ███████╗██████╗  ██████╗ ███╗   ██╗\e[0m
+\e[32m  ██╔═══██╗████╗  ██║██╔════╝ ████╗  ██║██╔══██╗██╔════╝██╔══██╗██╔═══██╗████╗  ██║\e[0m
+\e[32m  ██║   ██║██╔██╗ ██║██║  ███╗██╔██╗ ██║██████╔╝█████╗  ██████╔╝██║   ██║██╔██╗ ██║\e[0m
+\e[32m  ██║   ██║██║╚██╗██║██║   ██║██║╚██╗██║██╔══██╗██╔══╝  ██╔══██╗██║   ██║██║╚██╗██║\e[0m
+\e[32m  ╚██████╔╝██║ ╚████║╚██████╔╝██║ ╚████║██║  ██║███████╗██║  ██║╚██████╔╝██║ ╚████║\e[0m
+\e[32m   ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝\e[0m
+"
+echo -e "\e[32m                           ANONRECON  v1.3 — By klodi"
+echo -e "\e[90m  --------------------------------------------------------------------------\e[0m"
+echo -e "\e[36m   • Passive OSINT | Active Recon | Anon Search | Digital Footprint Analysis\e[0m"
+echo -e "\e[90m  --------------------------------------------------------------------------\e[0m"
+echo -e "\e[32m                 ANONRECON: Investigate, Search, Anonymously.\e[0m"
+echo -e "\e[1;31m                       !!!  TYPE 'h' TO SEE COMMANDS  !!!\e[0m"
+echo -e "\e[1;31m                       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\e[0m"
+echo ""
+
+}
+
+function banner {
+  clear
+  echo -e "
+\e[32m   █████╗ ███╗   ██╗ ██████╗ ███╗   ██╗██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗
+\e[32m  ██╔══██╗████╗  ██║██╔═══██╗████╗  ██║██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║
+\e[32m  ███████║██╔██╗ ██║██║   ██║██╔██╗ ██║██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║
+\e[32m  ██╔══██║██║╚██╗██║██║   ██║██║╚██╗██║██╔══██╗██╔══╝  ██║     ██║   ██║██║╚██╗██║
+\e[32m  ██║  ██║██║ ╚████║╚██████╔╝██║ ╚████║██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║
+\e[32m  ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝
+                                                                                         
+           '##::::'##:::::'#######:::::::::'#####:::
+##          ##:::: ##::::'##.... ##:::::::'##.. ##::
+  ##        ##:::: ##::::..::::: ##::::::'##:::: ##:
+    ##      ##:::: ##:::::'#######::::::: ##:::: ##:
+      ##   . ##:: ##:::::'##::::::::::::: ##:::: ##:
+    ##     :. ## ##:::::: ##::::::::'###:. ##:: ##::
+  ##       ::. ###::::::: #########: ###::. #####:::
+##         :::...::::::::.........::...::::.....::::\e[5m############\e[0m"
+
+  echo -e "\e[32m               ANONRECON
+  : Open Source Intelligence Investigations Made Easy\e[0m"
+  echo ""
+
+}
+banner
+
+function help {
+  echo -e "
+id     Command name              Description
+
+[\e[32m1\e[0m]   \e[1;31m domain_scanner \e[0m           Search all possible information from a \e[1;35mdomain\e[0m.
+[\e[32m2\e[0m]   \e[1;31m IP_scanner \e[0m               Search all possible information from an \e[1;35mIP address\e[0m.
+[\e[32m3\e[0m]   \e[1;31m phone_scanner \e[0m            Search all possible information from a \e[1;35mphone number\e[0m.
+[\e[32m4\e[0m]   \e[1;31m email_scanner \e[0m            Search all possible information from an \e[1;35memail\e[0m.
+[\e[32m5\e[0m]   \e[1;31m email_socialscan \e[0m         Detects Instagram, Twitter, Strava and Snapchat registration from an \e[1;35memail\e[0m.
+[\e[32m6\e[0m]   \e[1;31m link_scanner \e[0m             Sniff all links from a \e[1;35mdomain\e[0m.
+[\e[32m7\e[0m]   \e[1;31m port_scanner \e[0m             Classic opened \e[1;35mport scanner\e[0m.
+[\e[32m8\e[0m]   \e[1;31m criminal_scanner \e[0m         Checks whether \e[1;35msomeone\e[0m is registered as a criminal in the USA.
+[\e[32m9\e[0m]   \e[1;31m image_scanner \e[0m            Extracts EXIF data from \e[1;35mimage\e[0m.
+[\e[32m10\e[0m]  \e[1;31m ssl_inspect \e[0m              Retrieve detailed information about the \e[1;35mSSL\e[0m certificate for a specified \e[1;35mdomain\e[0m.
+[\e[32m11\e[0m]  \e[1;31m reverse_ip_lookup \e[0m        Identify domain names associated with a specific \e[1;35mIP\e[0m address using DNS records.
+
+[\e[32mrer\e[0m] \e[1;31m read_report \e[0m              \e[1;35mRead\e[0m a report file
+[\e[32medr\e[0m] \e[1;31m edit_report \e[0m              \e[1;35mEdit\e[0m a report file
+[\e[32mexr\e[0m] \e[1;31m export_report \e[0m            \e[1;35mExport\e[0m a report file
+[\e[32mder\e[0m] \e[1;31m delete_report \e[0m            \e[1;35mDelete\e[0m a report file
+
+[\e[32mc\e[0m]   \e[1;31m clear \e[0m                    \e[1;35mClear\e[0m terminal.
+[\e[32mu\e[0m]   \e[1;31m update \e[0m                   \e[1;35mUpdate\e[0m tool.
+[\e[32mb\e[0m]   \e[1;31m banner \e[0m                   \e[1;35mDisplay\e[0m banner.
+[\e[32me\e[0m]   \e[1;31m exit \e[0m                     \e[1;35mExit\e[0m the tool
+[\e[32mh\e[0m]   \e[1;31m help \e[0m                     Prompt this \e[1;35mhelp\e[0m and exit.
+[\e[32muni\e[0m] \e[1;31m uninstall \e[0m                \e[1;35mRemove\e[0m GhostRecon
+
+DON'T FORGET TO:
+-Drink plenty of milk for your bones.
+-Turn off the light when you leave."
+  echo ""
+  echo ""
+}
+
+a1='clear'  ##
+a2='banner' ##
+a3='update' ##
+a7='exit'
+a8='uninstall'
+
+a9='rer'
+a9a='read_report'
+a10='edr'
+a10a='edit_report'
+a11='exr'
+a11a='export_report'
+a12='der'
+a12a='delete_report'
+
+#####################
+b1='v'
+b2='h'
+b3='help'
+b4='version'
+b5='domain_scanner'
+b6='IP_scanner'
+b7='phone_scanner'
+b8='email_scanner'
+b9='email_socialscan'
+b10='link_scanner'
+b11='port_scanner'
+b12='criminal_scanner'
+b13='person_finder'
+b14='image_scanner'
+b15='ssl_inspect'
+b16='reverse_IP_lookup'
+temp=""
+
+banner
+
+while true; do
+
+greconinput=$'\e[31m[\e[0mANON\e[31m]\e[0m\n|\n└──>'
+
+  echo -e -n "$greconinput"
+  read x
+  if [ "$x" == "$a1" ] || [ "$x" == "c" ]; then
+    clear
+    banner
+  elif [ "$x" == "$a2" ] || [ "$x" == "b" ]; then
+    banner
+
+  elif [ "$x" == "$a3" ] || [ "$x" == "u" ]; then
+
+    path_to_temp_update="$PATH_TO_TOOLS"/Grecon_temp
+    sudo curl -s -o "$path_to_temp_update" https://raw.githubusercontent.com/KawaCoder/GhostRecon/master/Grecon
+    version_local=$(get_version "/usr/bin/Grecon")
+    version_remote=$(get_version "$path_to_temp_update")
+
+    if [ -z "$version_remote" ] || dpkg --compare-versions "$version_local" lt "$version_remote"; then
+      sudo "$PATH_TO_TOOLS"/install.sh
+      exit
+    else
+      echo "GhostRecon is up to date."
+      echo "$version_remote"
+    fi
+
+  elif [ "$x" == "$a7" ] || [ "$x" == "e" ]; then
+    quit
+  elif [ "$x" == "$a8" ] || [ "$x" == "uni" ]; then
+    sudo "$PATH_TO_TOOLS"/uninstall.sh "$PATH_TO_REPORTS"
+    exit
+
+  elif [ "$x" == "$a9" ] || [ "$x" == $a9a ]; then
+    read_report
+
+  elif [ "$x" == "$a10" ] || [ "$x" == $a10a ]; then
+    edit_report
+
+  elif [ "$x" == "$a11" ] || [ "$x" == $a11a ]; then
+    export_report
+
+  elif [ "$x" == "$a12" ] || [ "$x" == $a12a ]; then
+    delete_report
+  ############################################################################################################
+  elif [ "$x" == "$b1" ] || [ "$x" == "$b4" ]; then
+    version_local=$(get_version "/usr/bin/Grecon")
+    api_response=$(curl -s https://api.github.com/repos/KawaCoder/GhostRecon/branches/master)
+    lastcommitmessage=$(echo "$api_response" | jq -r '.commit.commit.message')
+    lastupdate_date=$(echo "$api_response" | jq -r '.commit.commit.author.date')
+    echo ""
+    echo -e "\e[1;31m  VERSION: $version_local $lastupdate_date by KawaCoder\e[0m"
+    echo "-----------------------------LAST MINOR COMMIT------------------------------"
+    echo "$lastcommitmessage"
+    echo "----------------------------------------------------------------------------"
+    echo ""
+    echo "-----------------------------LAST CHANGES-----------------------------------"
+    echo "$last_notable_changes"
+    echo "----------------------------------------------------------------------------"
+  elif [ "$x" == "$b2" ] || [ "$x" == "$b3" ]; then
+    help
+
+  elif [ "$x" == "$b5" ] || [ "$x" == "1" ]; then
+    echo ""
+    echo -e "\e[1;31m_____________________\e[0m"
+    echo -e "\e[1;31m\   Domain Scanner  /\e[0m"
+    echo -e "\e[1;31m  -----------------\e[0m"
+    echo ""
+    save_output
+    echo "Example: kali.org"
+    read -p "[DOMAIN]: " domain
+    echo ""
+    echo "Gathering Informations...."
+    echo ""
+    echo -e "\e[1;31m [*] ADMIN INFO (WHOIS INFO)\e[0m"
+    echo "-------------------------------------------------------------------------------"
+    echo -e "\n\n-----DOMAIN SCAN OF $domain-----\n\n[*] ADMIN INFO (WHOIS INFO)\n-------------------------------------------------------------------------------" >>"$filename"
+    echo ""
+    whois "$domain" | tee -a "$filename"
+    echo ""
+    read -p "Press enter to continue"
+    echo ""
+    echo -e "\e[1;31m [*] DNS LOOKUP\e[0m"
+    echo "-------------------------------------------------------------------------------"
+    echo -e "\n\n[*] DNS LOOKUP\n-------------------------------------------------------------------------------\n" >>"$filename"
+    curl https://api.hackertarget.com/dnslookup/?q=$domain | tee -a "$filename"
+    echo ""
+    host "$domain" | tee -a "$filename"
+    echo "-------------------------------------------------------------------------------" | tee -a "$filename"
+    echo ""
+    echo -e "\e[1;31m [*] DONE\e[0m"
+    echo ""
+    collapse_files
+
+  elif [ "$x" == "$b6" ] || [ "$x" == "2" ]; then
+    echo -e "\e[1;31m[*] HOW TO GET SHODAN API KEY: https://www.youtube.com/watch?v=nAcaAr00yjI\e[0m"
+    echo "Once you have your API key run:"
+    echo -e "~\$shodan init [your api key]\n\nPress enter to continue"
+    echo ""
+    echo -e "\e[1;31m__________________\e[0m"
+    echo -e "\e[1;31m\   IP  Scanner  /\e[0m"
+    echo -e "\e[1;31m  --------------\e[0m"
+    echo ""
+    echo "Example: 48.345.21.782"
+    read -p "[IP ADDRESS]: " ipaddress
+    save_output
+    echo ""
+    echo "Gathering Informations...."
+    echo ""
+    echo -e "-----IP SCAN OF $ipaddress-----\n" >>"$filename"
+    echo -e "\e[1;31m [*] LOCALISATION\e[0m"
+    echo "[*] LOCALISATION" >>"$filename"
+    echo "-------------------------------------------------------------------------------" | tee -a "$filename"
+    curl https://api.hackertarget.com/geoip/?q="$ipaddress" | tee -a "$filename"
+    echo ""
+    read -p "Press enter to continue"
+    echo -e "\n-------------------------------------------------------------------------------" | tee -a "$filename"
+    echo ""
+    echo -e "\e[1;31m [*] ADMIN INFO\e[0m"
+    echo "[*] ADMIN INFO" >>"$filename"
+    echo "-------------------------------------------------------------------------------" | tee -a "$filename"
+    echo ""
+    whois "$ipaddress" | tee -a "$filename"
+    echo ""
+    read -p "Press enter to continue"
+    echo "-------------------------------------------------------------------------------" | tee -a "$filename"
+    echo ""
+    echo -e "\e[1;31m [*] SHODAN RESULTS\e[0m"
+    echo "[*] SHODAN RESULTS" >>"$filename"
+    echo "-------------------------------------------------------------------------------" | tee -a "$filename"
+    echo ""
+    echo "[ * ] Gathering informations..."
+    shodan stats --facets vuln net:"$ipaddress" | tee -a "$filename"
+    echo ""
+    shodan host "$ipaddress" | tee -a "$filename"
+    echo ""
+    echo -e "\e[1;31m [*] DONE\e[0m"
+    echo -e "\n [*] DONE\n" >>"$filename"
+    echo ""
+    collapse_files
+
+  elif [ "$x" == "$b7" ] || [ "$x" == "3" ]; then
+    echo ""
+    echo -e "\e[1;31m_____________________\e[0m"
+    echo -e "\e[1;31m\   Phone Scanner   /\e[0m"
+    echo -e "\e[1;31m  -----------------\n\e[0m"
+    echo "Please Enter The Number Followed By The Dialing Code"
+    echo "for example : +447410490080 / +44 Is My Dialing Code"
+    read -p "Phone Number: " phone_info
+    echo ""
+    save_output
+    echo -e "Scan of $phone_info\n" >>"$filename"
+    echo "Gathering Information..."
+    echo ""
+    echo -e "\e[1;31m [*] PHONE $phone_info\e[0m"
+    echo "-------------------------------------------------------------------------------" >>"$filename"
+    echo ""
+    python3 $PATH_TO_TOOLS/phone_locator.py "$phone_info" | tee -a "$filename"
+    echo ""
+    echo -e "\n [*] DONE" | tee -a "$filename"
+    collapse_files
+
+  elif [ "$x" == "$b8" ] || [ "$x" == "4" ]; then
+
+    echo -e "\e[1;31m_____________________\e[0m"
+    echo -e "\e[1;31m\   Email Scanner   /\e[0m"
+    echo -e "\e[1;31m  -----------------\n\e[0m"
+
+    echo -e "\e[0;31mWarning: after a few tries, you will be blocked. In this case, change your ip with 'hide identity' command.\e[0m"
+    read -p "Enter target email:>" email
+    save_output
+    echo -e -n " [\e[1;31m*\e[0m] Gathering informations..."
+    jsondata=$(curl --silent emailrep.io/"$email")
+    #jsondata=$(cat brutjson.json)
+    echo -e "\e[0;32m [OK]\e[0m"
+
+    echo -e -n " [\e[1;31m*\e[0m] Parsing informations..."
+    email_reputation=$(echo "$jsondata" | jq .reputation)
+    email_suspicious=$(echo "$jsondata" | jq .suspicious)
+    email_reputationscore=$(echo "$jsondata" | jq .references)
+    email_blacklisted=$(echo "$jsondata" | jq .details.blacklisted)
+    email_maliciousactivity=$(echo "$jsondata" | jq .details.malicious_activity)
+    email_recentmalicious=$(echo "$jsondata" | jq .details.malicious_activity_recent)
+    email_credsleak=$(echo "$jsondata" | jq .details.credentials_leaked)
+    email_databreach=$(echo "$jsondata" | jq .details.data_breach)
+    email_firstseen=$(echo "$jsondata" | jq .details.first_seen)
+    email_lastseen=$(echo "$jsondata" | jq .details.last_seen)
+    email_domainexists=$(echo "$jsondata" | jq .details.domain_exists)
+    email_domainreputation=$(echo "$jsondata" | jq .details.domain_reputation)
+    email_newdomain=$(echo "$jsondata" | jq .details.new_domain)
+    email_dayssincedomaincreation=$(echo "$jsondata" | jq .details.days_since_domain_creation)
+    email_suspicioustld=$(echo "$jsondata" | jq .details.suspicious_tld)
+    email_spam=$(echo "$jsondata" | jq .details.spam)
+    email_freeprovider=$(echo "$jsondata" | jq .details.free_provider)
+    email_disposable=$(echo "$jsondata" | jq .details.disposable)
+    email_deliverable=$(echo "$jsondata" | jq .details.deliverable)
+    email_acceptall=$(echo "$jsondata" | jq .details.accept_all)
+    email_validmx=$(echo "$jsondata" | jq .details.valid_mx)
+    email_primarymx=$(echo "$jsondata" | jq .details.primary_mx)
+    email_spoofable=$(echo "$jsondata" | jq .details.spoofable)
+    email_spf_strict=$(echo "$jsondata" | jq .details.spf_strict)
+    email_DMARC=$(echo "$jsondata" | jq .details.dmarc_enforced)
+    email_profiles=$(echo "$jsondata" | jq .details.profiles)
+
+    echo -e "\e[0;32m [OK]\e[0m"
+
+    echo -e "\e[1;31m \n_____FULL REPORT_____\e[1;31m \e[0m\n"
+    echo -e "-Email: |"
+    booleancolor "$email"
+    echo -n "-Suspicious: |"
+    booleancolor "$email_suspicious"
+    echo -n "-Has reputation: |"
+    booleancolor "$email_reputation"
+    echo -n "-Reputation score: "
+    booleancolor "$email_reputationscore"
+    echo -n "-Is blacklisted: |"
+    booleancolor "$email_blacklisted"
+    echo -n "-Has a malicious activity: |"
+    booleancolor "$email_maliciousactivity"
+    echo -n "-Has a recent malicious activity: |"
+    booleancolor "$email_recentmalicious"
+    echo -n "-Creditentials leaked: |"
+    booleancolor "$email_credsleak"
+    echo -n "-Is on a data breach: |"
+    booleancolor "$email_databreach"
+    echo -n "-First seen: |"
+    booleancolor "$email_firstseen"
+    echo -n "-Last seen: |"
+    booleancolor "$email_lastseen"
+    echo -n "-Domain exists: |"
+    reversedbooleancolor "$email_domainexists"
+    echo -n "-Domain reputation: |"
+    booleancolor "$email_domainreputation"
+    echo -n "-Is a new domain: |"
+    booleancolor "$email_newdomain"
+    echo -n "-Days since domain creation: |"
+    booleancolor "$email_dayssincedomaincreation"
+    echo -n "-Suspicious extention: |"
+    booleancolor "$email_suspicioustld"
+    echo -n "-Is spam: |"
+    booleancolor "$email_spam"
+    echo -n "-Free provider: |"
+    booleancolor "$email_freeprovider"
+    echo -n "-Temporary address: |"
+    booleancolor "$email_disposable"
+    echo -n "-Deliverable: |"
+    reversedbooleancolor "$email_deliverable"
+    echo -n "-Accept all: |"
+    booleancolor "$email_acceptall"
+    echo -n "-Valid MX: |"
+    reversedbooleancolor "$email_validmx"
+    echo -n "-Primary Mail Exchanger: |"
+    booleancolor "$email_primarymx"
+    echo -n "-Spoofable: |"
+    booleancolor "$email_spoofable"
+    echo -n "-Strict SPF: |"
+    reversedbooleancolor "$email_spf_strict"
+    echo -n "-DMARC (Domain-based Message Authentication, Reporting & Conformance) enforced: |"
+    reversedbooleancolor "$email_DMARC"
+    echo -n "-Profiles on social medias: |"
+    booleancolor "$email_profiles"
+
+    echo -e "\n_____ Scan of $email _____\n"
+    #for the saved file: (cannot handle colours)
+    echo -e "-Email: |" | tee -a "$filename"
+    booleanconvertor "$email" >>"$filename"
+    echo -n "-Suspicious: |" >>"$filename"
+    booleanconvertor "$email_suspicious" >>"$filename"
+    echo -n "-Has reputation: |" >>"$filename"
+    booleanconvertor "$email_reputation" >>"$filename"
+    echo -n "-Reputation score: " >>"$filename"
+    booleanconvertor "$email_reputationscore" >>"$filename"
+    echo -n "-Is blacklisted: |" >>"$filename"
+    booleanconvertor "$email_blacklisted" >>"$filename"
+    echo -n "-Has a malicious activity: |" >>"$filename"
+    booleanconvertor "$email_maliciousactivity" >>"$filename"
+    echo -n "-Has a recent malicious activity: |" >>"$filename"
+    booleanconvertor "$email_recentmalicious" >>"$filename"
+    echo -n "-Creditentials leaked: |" >>"$filename"
+    booleanconvertor "$email_credsleak" >>"$filename"
+    echo -n "-Is on a data breach: |" >>"$filename"
+    booleanconvertor "$email_databreach" >>"$filename"
+    echo -n "-First seen: |" >>"$filename"
+    booleanconvertor "$email_firstseen" >>"$filename"
+    echo -n "-Last seen: |" >>"$filename"
+    booleanconvertor "$email_lastseen" >>"$filename"
+    echo -n "-Domain exists: |" >>"$filename"
+    booleanconvertor "$email_domainexists" >>"$filename"
+    echo -n "-Domain reputation: |" >>"$filename"
+    booleanconvertor "$email_domainreputation" >>"$filename"
+    echo -n "-Is a new domain: |" >>"$filename"
+    booleanconvertor "$email_newdomain" >>"$filename"
+    echo -n "-Days since domain creation: |" >>"$filename"
+    booleanconvertor "$email_dayssincedomaincreation" >>"$filename"
+    echo -n "-Suspicious extention: |" >>"$filename"
+    booleanconvertor "$email_suspicioustld" >>"$filename"
+    echo -n "-Is spam: |" >>"$filename"
+    booleanconvertor "$email_spam" >>"$filename"
+    echo -n "-Free provider: |" >>"$filename"
+    booleanconvertor "$email_freeprovider" >>"$filename"
+    echo -n "-Temporary address: |" >>"$filename"
+    booleanconvertor "$email_disposable" >>"$filename"
+    echo -n "-Deliverable: |" >>"$filename"
+    booleanconvertor "$email_deliverable" >>"$filename"
+    echo -n "-Accept all: |" >>"$filename"
+    booleanconvertor "$email_acceptall" >>"$filename"
+    echo -n "-Valid MX: |" >>"$filename"
+    booleanconvertor "$email_validmx" >>"$filename"
+    echo -n "-Primary Mail Exchanger: |" >>"$filename"
+    booleanconvertor "$email_primarymx" >>"$filename"
+    echo -n "-Spoofable: |" >>"$filename"
+    booleanconvertor "$email_spoofable" >>"$filename"
+    echo -n "-Strict SPF: |" >>"$filename"
+    booleanconvertor "$email_spf_strict" >>"$filename"
+    echo -n "-DMARC (Domain-based Message Authentication, Reporting & Conformance) enforced: |" >>"$filename"
+    booleanconvertor "$email_DMARC" >>"$filename"
+    echo -n "-Profiles on social medias: |" >>"$filename"
+    booleanconvertor "$email_profiles" >>"$filename"
+    collapse_files
+
+  elif [ "$x" == "$b9" ] || [ "$x" == "5" ]; then
+    echo -e "\e[1;31m____________________________\e[0m"
+    echo -e "\e[1;31m\   Social media Scanner   /\e[0m"
+    echo -e "\e[1;31m  ------------------------\n\e[0m"
+    save_output
+    echo -e "__________Social Media Check__________\n" >>"$filename"
+    python3 "$PATH_TO_TOOLS"/email_scanner.py | tee -a "$filename"
+    collapse_files
+
+  elif [ "$x" == "$b10" ] || [ "$x" == "6" ]; then
+    echo -e "\e[1;31m_____________________\e[0m"
+    echo -e "\e[1;31m\   Link Sniffing   /\e[0m"
+    echo -e "\e[1;31m  -----------------\n\e[0m"
+    save_output
+    echo -e "__________Link Sniffing__________\n" >>"$filename"
+    echo ""
+    echo "Example: kali.org"
+    read -p "Enter DOMAIN: " link
+    echo ""
+    echo "Gathering Information..."
+    echo ""
+    echo -e "\e[1;31m [*] SNIFFING LINKS\e[0m"
+    echo "-------------------------------------------------------------------------------" | tee -a "$filename"
+    curl https://api.hackertarget.com/pagelinks/?q=$link | tee -a "$filename"
+    echo ""
+    collapse_files
+
+  elif [ "$x" == "$b11" ] || [ "$x" == "7" ]; then
+    echo -e "\e[1;31m_____________________\e[0m"
+    echo -e "\e[1;31m\   Port Scanner   /\e[0m"
+    echo -e "\e[1;31m  -----------------\n\e[0m"
+    save_output
+    echo -e "__________Port Scanner__________\n" >>"$filename"
+    echo ""
+    echo -e "\e[1;31m###########################\e[0m"
+    echo -e "\e[1;31m##   ENTER TARGET'S IP   ##\e[0m"
+    echo -e "\e[1;31m###########################\e[0m"
+    echo ""
+    read -p "Ip: " IP
+    echo ""
+    echo -e "\e[1;31m###########################\e[0m"
+    echo -e "\e[1;31m##   ENTER PORTS RANGE   ##\e[0m"
+    echo -e "\e[1;31m###########################\e[0m"
+    echo ""
+    echo "EXAMPLE : \"0-100\" WILL SCAN PORTS BETWEEN 0 AND 100"
+    read -p "Ports range: " ports
+    echo ""
+    echo -e "------------- Port Scan of $IP : ports $ports -------------\n" >>"$filename"
+    firstport="$(echo "$ports" | cut -d'-' -f1)"
+    lastport="$(echo "$ports" | cut -d'-' -f2)"
+
+    for PORT in $(eval echo "{$firstport..$lastport}"); do
+
+      if timeout 0.5s bash -c "</dev/tcp/$IP/$PORT" 2>/dev/null; then
+        echo -e "[\e[32m+\e[0m] $PORT open"
+        echo -e "[+] $PORT open" >>"$filename"
+      else
+        echo -e "[\e[31m-\e[0m] $PORT closed/filtered/timed out"
+        echo -e "[-] $PORT closed/filtered/timed out" >>"$filename"
+      fi
+    done
+    eho ""
+    collapse_files
+
+  elif [ "$x" == "$b12" ] || [ "$x" == "8" ]; then
+    echo ""
+    read -p "TARGET'S FIRST NAME > " target_firstname
+    read -p "TARGET'S LAST NAME >" target_lastname
+    read -p "TARGET'S STATE >" target_state
+    read -p "TARGET'S CITY >" target_city
+    echo -e -n "\e[1;31m [*] GENERATING LINK... \e[0m"
+    if [[ -n $target_state ]]; then
+      target_state="${target_state}."
+    fi
+    criminal_report_link="https://"$target_state"staterecords.org/search.php?firstname=$target_firstname&lastname=$target_lastname&city=$target_city"
+    echo -e "\e[0;32m [OK]\e[0m"
+    echo -e "\n\n \e[1;31mCTRL + click on this link to get your report: [\e[0m\e[1;34m$criminal_report_link\e[0m\e[1;31m]\e[0m"
+  elif [ "$x" == "$b14" ] || [ "$x" == "9" ]; then
+    echo -e "\e[1;31m______________________\e[0m"
+    echo -e "\e[1;31m\   Image EXIF scan  /\e[0m"
+    echo -e "\e[1;31m  ------------------\n\e[0m"
+    read -p "Enter Path of Image >" imagepath
+    save_output
+    echo "EXIF data from: $imagepath :"
+    exiv2 "$imagepath" | tee -a "$filename"
+    collapse_files
+
+  elif [ "$x" == "$b15" ] || [ "$x" == "10" ]; then
+    echo ""
+    echo -e "\e[1;31m__________________________\e[0m"
+    echo -e "\e[1;31m\   SSL Certificate scan  /\e[0m"
+    echo -e "\e[1;31m  ------------------\n\e[0m"
+    read -p "Enter Domain >" domain
+    save_output
+    echo "SSL Certificate info from: $domain :"
+    echo | openssl s_client -connect "$domain":443 -servername "$domain" 2>/dev/null | openssl x509 -text -noout | tee -a "$filename"
+    collapse_files
+
+  elif [ "$x" == "$b16" ] || [ "$x" == "11" ]; then
+
+    while true; do
+      read -p "Enter an IP address (or type 'exit' to quit): " ipaddress
+      if [ "$ipaddress" == "exit" ]; then
+        break
+      fi
+
+      # Validate IP address format
+      if [[ ! "$ipaddress" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "Invalid IP address format. Please try again."
+        continue
+      fi
+
+      # Perform DNS lookup
+      reversed_ip=$(echo "$ipaddress" | awk -F. '{print $4"."$3"."$2"."$1".in-addr.arpa"}')
+      hostname=$(dig +short -x "$ipaddress")
+
+      if [ -n "$hostname" ]; then
+        echo "The hostname for IP address $ipaddress is $hostname."
+      else
+        echo "No PTR record found for IP address $ipaddress."
+      fi
+    done
+
+  else
+
+    echo "WRONG COMMAND TRY AGAIN OR TYPE \"h\" TO SEE THEM"
+  fi
+done
